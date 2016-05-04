@@ -24,6 +24,7 @@ class StyleController {
         var arrayOfItalics = [Int]()
         var arrayOfLines = [Int]()
         var arrayOfLists = [Int]()
+        var normalParagraphs = [Int]()
         var simpleString = attributedString.string
         
         attributedString.enumerateAttributesInRange(NSMakeRange(0, attributedString.length), options: NSAttributedStringEnumerationOptions()) { (dictOfAttrs: [String : AnyObject], range: NSRange, _) -> Void in
@@ -67,6 +68,8 @@ class StyleController {
                         arrayOfLists.append(range.location + range.length)
                     } else {
                         print("Non-list paragraph starts at \(range.location)")
+                        //ranges.append(range.location)
+                        //range
                     }
                 }
             }
@@ -121,61 +124,82 @@ class StyleController {
             if arrayOfLists.contains(indexOfAttr) {
                 print("String Length: \(simpleString.characters.count), IndexOfAttr: \(indexOfAttr), Shift: \(shift), ListStarted: \(listStarted)")
                 if !listStarted {
-                    let index = simpleString.startIndex.advancedBy(indexOfAttr + shift)
-                    let tabRange = simpleString.rangeOfString("\t", options: NSStringCompareOptions.init(rawValue: 0), range: Range(index.advancedBy(1) ..< simpleString.endIndex), locale: nil)
-                    let prefixRange = Range(index ..< tabRange!.endIndex)
-                    let prefix = simpleString.substringWithRange(prefixRange)
-                    if prefix.containsString("•") {
-                        typeOfList = "unordered"
-                        print("Found a starting Tab mark!")
-                        simpleString.removeRange(prefixRange)
-                        shift -= prefixRange.count
-                        if shift + indexOfAttr < 1 {
-                            simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex)
-                        } else {
-                            simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
+                    if !simpleString.isEmpty {
+                        let index = simpleString.startIndex.advancedBy(indexOfAttr + shift)
+                        if index < simpleString.endIndex {
+                            let tabRange = simpleString.rangeOfString("\t", options: NSStringCompareOptions.init(rawValue: 0), range: Range(index.advancedBy(1) ..< simpleString.endIndex), locale: nil)
+                            if tabRange != nil {
+                                let prefixRange = Range(index ..< tabRange!.endIndex)
+                                let prefix = simpleString.substringWithRange(prefixRange)
+                                if prefix.containsString("•") {
+                                    typeOfList = "unordered"
+                                    print("Found a starting Tab mark!")
+                                    simpleString.removeRange(prefixRange)
+                                    shift -= prefixRange.count
+                                    if shift + indexOfAttr < 1 {
+                                        simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex)
+                                    } else {
+                                        simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
+                                    }
+                                    shift += 8
+                                    listStarted = true
+                                } else {
+                                    typeOfList = "ordered"
+                                    simpleString.removeRange(prefixRange)
+                                    shift -= prefixRange.count
+                                    if shift + indexOfAttr < 1 {
+                                        simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex)
+                                    } else {
+                                        simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
+                                    }
+                                    shift += 8
+                                    listStarted = true
+                                }
+                            }
                         }
-                        shift += 8
-                        listStarted = true
-                    } else {
-                        typeOfList = "ordered"
-                        simpleString.removeRange(prefixRange)
-                        shift -= prefixRange.count
-                        if shift + indexOfAttr < 1 {
-                            simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex)
-                        } else {
-                            simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                        }
-                        shift += 8
-                        listStarted = true
                     }
                 } else {
-                    if typeOfList == "unordered" {
-                        simpleString.insertContentsOf("</li></ul>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                        shift += 10
-                        listStarted = false
-                    } else {
-                        simpleString.insertContentsOf("</li></ol>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                        shift += 10
-                        listStarted = false
+                    if simpleString.characters.count >= indexOfAttr + shift {
+                        if typeOfList == "unordered" {
+                            simpleString.insertContentsOf("</li></ul>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
+                            shift += 10
+                            listStarted = false
+                        } else {
+                            simpleString.insertContentsOf("</li></ol>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
+                            shift += 10
+                            listStarted = false
+                        }
                     }
                 }
-                
-                
-                
             }
         }
         let nsString : NSString = simpleString
         var i = 0
+        //CYCLE THROUGH EACH LIST IN TEXT
         while i < nsString.length {
             let startOfList = nsString.rangeOfString("<li>", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(i, nsString.length - i))
             let endOfList = nsString.rangeOfString("</li>", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(i, nsString.length - i))
             if startOfList.location != NSNotFound && endOfList.location != NSNotFound {
                 i = endOfList.location + endOfList.length
-                let listRange = NSMakeRange(startOfList.location + startOfList.length, endOfList.location)
-                let listString : NSString = nsString.substringWithRange(listRange)
-                let newListString = listString.stringByReplacingOccurrencesOfString("\n", withString: "</li>\n<li>")
-                nsString.stringByReplacingCharactersInRange(listRange, withString: newListString)
+                let listRange = NSMakeRange(NSMaxRange(startOfList), endOfList.location - NSMaxRange(startOfList))
+                //CYCLE THROUGH EACH LINE AND FIND PREFIX TO REPLACE
+                let listString : NSString = nsString.substringWithRange(listRange) //This is the text of the list
+                print("List String: \(listString)")
+                let linesInList :[NSString] = listString.componentsSeparatedByString("\n")
+                var newList = ""
+                for j in 0..<linesInList.count {
+                    if linesInList[j].length > 0 {
+                        let tabRange = linesInList[j].rangeOfString("\t", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(1, linesInList[j].length - 1))
+                        if tabRange.location != NSNotFound {
+                            let newLine = linesInList[j].substringFromIndex(NSMaxRange(tabRange))
+                            newList += newLine
+                            if j < linesInList.count - 1 {
+                                newList += "</li>\n<li>"
+                            }
+                        }
+                    }
+                }
+                simpleString = nsString.stringByReplacingCharactersInRange(listRange, withString: newList)
             } else {
                 break
             }
@@ -184,6 +208,7 @@ class StyleController {
         simpleString = simpleString.stringByTrimmingCharactersInSet(NSCharacterSet(charactersInString: "\n\r"))
         simpleString.insertContentsOf("<div style=\"font-size:\(fontSize)px\">".characters, at: simpleString.startIndex)
         simpleString.insertContentsOf("</div>".characters, at: simpleString.endIndex)
+        print("Returning HTML String: \(simpleString)")
         return simpleString
     }
     
@@ -198,10 +223,11 @@ class StyleController {
         return attrString
     }
     
-    func insertStyleAttribute(style: String, selectedRange: NSRange, text: NSAttributedString) -> NSAttributedString {
+    func insertStyleAttribute(style: String, selectedRange: NSRange, text: NSAttributedString) -> (NSAttributedString, NSRange) {
         print("Selected range: Location \(selectedRange.location) Length \(selectedRange.length)")
         let textNSString : NSString = text.string
         let newString = NSMutableAttributedString(attributedString: text)
+        var newRange = selectedRange
         switch style {
         case "ordered", "unordered":
             //BULLETS & NUMBERS
@@ -221,7 +247,6 @@ class StyleController {
             }
             let line = NSAttributedString(attributedString: text.attributedSubstringFromRange(lineRange))
             var htmlLine = convertAttributedStringToHTML(line)
-            print("HTML Line: \(htmlLine)")
             if style == "ordered" {
                 if htmlLine.containsString("<ol>") {
                     htmlLine.removeRange(htmlLine.rangeOfString("<ol>")!)
@@ -241,6 +266,11 @@ class StyleController {
                 htmlLine.removeRange(htmlLine.rangeOfString("<li>")!)
                 newOrder = false
                 print("Already was a list! Removing...")
+                if style == "ordered" {
+                    newRange = NSMakeRange(newRange.location - 4, newRange.length)
+                } else {
+                    newRange = NSMakeRange(newRange.location - 3, newRange.length)
+                }
             }
             while htmlLine.containsString("</li>") {
                 htmlLine.removeRange(htmlLine.rangeOfString("</li>")!)
@@ -250,16 +280,17 @@ class StyleController {
                 if style == "ordered" {
                     htmlLine.insertContentsOf("<ol><li>".characters, at: htmlLine.startIndex)
                     htmlLine.insertContentsOf("</li></ol>".characters, at: htmlLine.endIndex)
+                    newRange = NSMakeRange(newRange.location + 4, newRange.length)
                 } else {
                     htmlLine.insertContentsOf("<ul><li>".characters, at: htmlLine.startIndex)
                     htmlLine.insertContentsOf("</li></ul>".characters, at: htmlLine.endIndex)
+                    newRange = NSMakeRange(newRange.location + 3, newRange.length)
                 }
                 htmlLine = htmlLine.stringByReplacingOccurrencesOfString("<br>", withString: "</li><br><li>")
             }
             let newAttrLine = NSMutableAttributedString(attributedString: convertHTMLToAttributedString(htmlLine))
-            let newNSStringLine : NSString = newAttrLine.string
-            let endStop = newNSStringLine.rangeOfString("\n", options: NSStringCompareOptions.BackwardsSearch, range: NSMakeRange(0, newNSStringLine.length))
-            newAttrLine.replaceCharactersInRange(endStop, withString: "")
+            CFStringTrim(newAttrLine.mutableString, "\n")
+            print("New string line: \(newAttrLine.string)")
             newString.replaceCharactersInRange(lineRange, withAttributedString: newAttrLine)
         case "underline":
             var addUnderline = true
@@ -334,7 +365,7 @@ class StyleController {
         default:
             break
         }
-        return newString
+        return (newString, newRange)
     }
     
     func checkListStyle(text: NSAttributedString, range: NSRange) -> (String, Int?) {
@@ -364,5 +395,37 @@ class StyleController {
             }
         }
         return (style, lineNum)
+    }
+    
+    func checkNewLineParagraphStyle(text: NSAttributedString, range: NSRange) -> (NSAttributedString, Bool, NSRange) {
+        let stringText : NSString = text.string
+        let tabRange = stringText.rangeOfString("\t", options: NSStringCompareOptions.BackwardsSearch, range: NSMakeRange(0, range.location))
+        if tabRange.location != NSNotFound {
+            let previousTabRange = stringText.rangeOfString("\t", options: NSStringCompareOptions.BackwardsSearch, range: NSMakeRange(0, tabRange.location))
+            if previousTabRange.location != NSNotFound {
+                let tabSign = stringText.substringWithRange(NSMakeRange(previousTabRange.location + previousTabRange.length, tabRange.location - previousTabRange.location - previousTabRange.length))
+                //Check if this line is empty
+                let lineBreakRange = stringText.rangeOfString("\n", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(tabRange.location + tabRange.length, stringText.length - tabRange.location - tabRange.length))
+                var endLineIndex = stringText.length
+                if lineBreakRange.location != NSNotFound {
+                    endLineIndex = lineBreakRange.location
+                }
+                let lineContent = stringText.substringWithRange(NSMakeRange(tabRange.location + tabRange.length, endLineIndex - tabRange.location - tabRange.length))
+                print("Line content: \(lineContent)")
+                if !lineContent.isEmpty {
+                    var replacementString = "\n\t•\t"
+                    if !tabSign.containsString("•") {
+                        let numString = tabSign.stringByTrimmingCharactersInSet(NSCharacterSet(charactersInString: ".\t"))
+                        if let tabNum = Int(numString) {
+                            replacementString = "\n\t\(tabNum + 1).\t"
+                        }
+                    }
+                    let mutString = NSMutableAttributedString(attributedString: text)
+                    mutString.replaceCharactersInRange(range, withString: replacementString)
+                    return (mutString, true, (NSMakeRange(range.location + replacementString.characters.count, 0)))
+                }
+            }
+        }
+        return (text, false, range)
     }
 }
