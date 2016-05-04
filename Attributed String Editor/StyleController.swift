@@ -23,8 +23,6 @@ class StyleController {
         var arrayOfBolds = [Int]()
         var arrayOfItalics = [Int]()
         var arrayOfLines = [Int]()
-        var arrayOfLists = [Int]()
-        var normalParagraphs = [Int]()
         var simpleString = attributedString.string
         
         attributedString.enumerateAttributesInRange(NSMakeRange(0, attributedString.length), options: NSAttributedStringEnumerationOptions()) { (dictOfAttrs: [String : AnyObject], range: NSRange, _) -> Void in
@@ -55,22 +53,6 @@ class StyleController {
                         ranges.append(range.location + range.length)
                         arrayOfLines.append(range.location + range.length)
                     }
-                } else if attributeName == NSParagraphStyleAttributeName {
-                    if value.headIndent == 36 {
-                        print("New paragraph starts at \(range.location)")
-                        if arrayOfLists.contains(range.location) {
-                            arrayOfLists.removeAtIndex(arrayOfLists.indexOf(range.location)!)
-                        } else {
-                            ranges.append(range.location)
-                            arrayOfLists.append(range.location)
-                        }
-                        ranges.append(range.location + range.length)
-                        arrayOfLists.append(range.location + range.length)
-                    } else {
-                        print("Non-list paragraph starts at \(range.location)")
-                        //ranges.append(range.location)
-                        //range
-                    }
                 }
             }
         }
@@ -80,8 +62,6 @@ class StyleController {
         var boldOn = false
         var italicOn = false
         var lineOn = false
-        var listStarted = false
-        var typeOfList = ""
         for indexOfAttr in setOfRanges {
             if shift < 0 {
                 shift = 0
@@ -121,91 +101,134 @@ class StyleController {
                     lineOn = false
                 }
             }
-            if arrayOfLists.contains(indexOfAttr) {
-                print("String Length: \(simpleString.characters.count), IndexOfAttr: \(indexOfAttr), Shift: \(shift), ListStarted: \(listStarted)")
-                if !listStarted {
-                    if !simpleString.isEmpty {
-                        let index = simpleString.startIndex.advancedBy(indexOfAttr + shift)
-                        if index < simpleString.endIndex {
-                            let tabRange = simpleString.rangeOfString("\t", options: NSStringCompareOptions.init(rawValue: 0), range: Range(index.advancedBy(1) ..< simpleString.endIndex), locale: nil)
-                            if tabRange != nil {
-                                let prefixRange = Range(index ..< tabRange!.endIndex)
-                                let prefix = simpleString.substringWithRange(prefixRange)
-                                if prefix.containsString("•") {
-                                    typeOfList = "unordered"
-                                    print("Found a starting Tab mark!")
-                                    simpleString.removeRange(prefixRange)
-                                    shift -= prefixRange.count
-                                    if shift + indexOfAttr < 1 {
-                                        simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex)
-                                    } else {
-                                        simpleString.insertContentsOf("<ul><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                                    }
-                                    shift += 8
-                                    listStarted = true
+        }
+        
+        //FIND LISTS
+        let splitByLines = simpleString.componentsSeparatedByString("\n")
+
+        var bulletsStarted = false
+        var numbersStarted = false
+        var number = 1
+        var newLines : [String] = []
+        for i in 0..<splitByLines.count {
+            var section = splitByLines[i]
+            if !section.isEmpty {
+                if section[section.startIndex] == "\t" {
+                    if section[section.startIndex.advancedBy(1)] == "•" && section[section.startIndex.advancedBy(2)] == "\t" {
+                        
+                        //Line starts with a bullet!
+                        
+                        //Finish Old Lists
+                        if numbersStarted {
+                            newLines[i - 1].appendContentsOf("</ol>")
+                            numbersStarted = false
+                        }
+                        
+                        if !bulletsStarted {
+                            //Start new bulleted list
+                            section = section.stringByReplacingOccurrencesOfString("\t•\t", withString: "<ul><li>")
+                            bulletsStarted = true
+                        } else {
+                            //Continue bullets
+                            section = section.stringByReplacingOccurrencesOfString("\t•\t", withString: "<li>")
+                        }
+                        //Close list item
+                        section.appendContentsOf("</li>")
+                        
+                    } else if Int(String(section[section.startIndex.advancedBy(1)])) != nil {
+                        //Line starts with a number!
+
+                        //Finish old bullet lists
+                        if bulletsStarted {
+                            newLines[i - 1].appendContentsOf("</ol>")
+                            bulletsStarted = false
+                        }
+                        //find the period after the number
+                        let periodRange = section.rangeOfString(".")
+                        if periodRange != nil {
+                            //find the number range (between tabs)
+                            let prefixRange = Range(section.startIndex.advancedBy(1)..<periodRange!.startIndex)
+                            let prefix = section.substringWithRange(prefixRange)
+                            if Int(prefix) != nil {
+                                //Line starts with a number!
+                                number = Int(prefix)!
+                                if !numbersStarted {
+                                    //Begin numbered list
+                                    section = section.stringByReplacingOccurrencesOfString("\t\(number).\t", withString: "<ol><li>")
+                                    numbersStarted = true
                                 } else {
-                                    typeOfList = "ordered"
-                                    simpleString.removeRange(prefixRange)
-                                    shift -= prefixRange.count
-                                    if shift + indexOfAttr < 1 {
-                                        simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex)
-                                    } else {
-                                        simpleString.insertContentsOf("<ol><li>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                                    }
-                                    shift += 8
-                                    listStarted = true
+                                    //Continue numbered list
+                                    section = section.stringByReplacingOccurrencesOfString("\t\(number).\t", withString: "<li>")
                                 }
+                                //Close list items
+                                section.appendContentsOf("</li>")
+                            } else {
+                                if i > 0 {
+                                    if numbersStarted {
+                                        newLines[i - 1].appendContentsOf("</ol>")
+                                        numbersStarted = false
+                                    }
+                                    if bulletsStarted {
+                                        newLines[i - 1].appendContentsOf("</ol>")
+                                        bulletsStarted = false
+                                    }
+                                }
+                            }
+                        } else {
+                            if i > 0 {
+                                if numbersStarted {
+                                    newLines[i - 1].appendContentsOf("</ol>")
+                                    numbersStarted = false
+                                }
+                                if bulletsStarted {
+                                    newLines[i - 1].appendContentsOf("</ol>")
+                                    bulletsStarted = false
+                                }
+                            }
+                        }
+                    } else {
+                        if i > 0 {
+                            if numbersStarted {
+                                newLines[i - 1].appendContentsOf("</ol>")
+                                numbersStarted = false
+                            }
+                            if bulletsStarted {
+                                newLines[i - 1].appendContentsOf("</ol>")
+                                bulletsStarted = false
                             }
                         }
                     }
                 } else {
-                    if simpleString.characters.count >= indexOfAttr + shift {
-                        if typeOfList == "unordered" {
-                            simpleString.insertContentsOf("</li></ul>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                            shift += 10
-                            listStarted = false
-                        } else {
-                            simpleString.insertContentsOf("</li></ol>".characters, at: simpleString.startIndex.advancedBy(indexOfAttr + shift))
-                            shift += 10
-                            listStarted = false
+                    if i > 0 {
+                        if numbersStarted {
+                            newLines[i - 1].appendContentsOf("</ol>")
+                            numbersStarted = false
+                        }
+                        if bulletsStarted {
+                            newLines[i - 1].appendContentsOf("</ol>")
+                            bulletsStarted = false
                         }
                     }
                 }
             }
+            newLines.append(section)
         }
-        let nsString : NSString = simpleString
-        var i = 0
-        //CYCLE THROUGH EACH LIST IN TEXT
-        while i < nsString.length {
-            let startOfList = nsString.rangeOfString("<li>", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(i, nsString.length - i))
-            let endOfList = nsString.rangeOfString("</li>", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(i, nsString.length - i))
-            if startOfList.location != NSNotFound && endOfList.location != NSNotFound {
-                i = endOfList.location + endOfList.length
-                let listRange = NSMakeRange(NSMaxRange(startOfList), endOfList.location - NSMaxRange(startOfList))
-                //CYCLE THROUGH EACH LINE AND FIND PREFIX TO REPLACE
-                let listString : NSString = nsString.substringWithRange(listRange) //This is the text of the list
-                print("List String: \(listString)")
-                let linesInList :[NSString] = listString.componentsSeparatedByString("\n")
-                var newList = ""
-                for j in 0..<linesInList.count {
-                    if linesInList[j].length > 0 {
-                        let tabRange = linesInList[j].rangeOfString("\t", options: NSStringCompareOptions.init(rawValue: 0), range: NSMakeRange(1, linesInList[j].length - 1))
-                        if tabRange.location != NSNotFound {
-                            let newLine = linesInList[j].substringFromIndex(NSMaxRange(tabRange))
-                            newList += newLine
-                            if j < linesInList.count - 1 {
-                                newList += "</li>\n<li>"
-                            }
-                        }
-                    }
-                }
-                simpleString = nsString.stringByReplacingCharactersInRange(listRange, withString: newList)
+        var newString = ""
+        for j in 0..<newLines.count {
+            newString += newLines[j]
+            if j < newLines.count - 1 {
+                newString += "<br>"
             } else {
-                break
+                if bulletsStarted {
+                    newString += "</ul>"
+                }
+                if numbersStarted {
+                    newString += "</ol>"
+                }
             }
         }
-        simpleString = simpleString.stringByReplacingOccurrencesOfString("\n", withString: "<br>")
-        simpleString = simpleString.stringByTrimmingCharactersInSet(NSCharacterSet(charactersInString: "\n\r"))
+        
+        simpleString = newString.stringByTrimmingCharactersInSet(NSCharacterSet(charactersInString: "\n\r"))
         simpleString.insertContentsOf("<div style=\"font-size:\(fontSize)px\">".characters, at: simpleString.startIndex)
         simpleString.insertContentsOf("</div>".characters, at: simpleString.endIndex)
         print("Returning HTML String: \(simpleString)")
